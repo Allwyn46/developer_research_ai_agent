@@ -14,3 +14,53 @@ model = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash", temperature=0, google_api_key=os.getenv("GEMINI_API_KEY")
 )
 
+server_params = StdioServerParameters(
+    command="npx",
+    env={
+        "FIRECRAWL_API_KEY":os.getenv('FIRECRAWL_API_KEY',""),
+    },
+    args=["firecrawl-mcp"]
+)
+
+async def main():
+    async with stdio_client(server_params) as (read,write):
+        async with ClientSession(read,write) as session:
+            await session.initialize()
+            tools = await load_mcp_tools(session)
+            agent = create_react_agent(model,tools)
+
+            messages = [
+                {
+                    "role":"system",
+                    "content":"You are a helpful assistant that can scrape websites, crawl pages, and extract data using Firecrawl tools. Think step by step and use the appropriate tools to help the user."
+                }
+            ]
+
+            print("Available tools:", *[tool.name for tool in tools])
+            print("-" * 60)
+
+            while True:
+                user_input = input("\nYou: ")
+                if user_input == "quit":
+                    print("Goodbye")
+                    break
+
+                messages.append({
+                    "role":"user",
+                    "content":user_input[:175000]
+                })
+
+                try:
+                    agent_response = await agent.ainvoke({
+                        "messages":messages
+                    })
+
+                    ai_response = agent_response["messages"][-1].content
+                    print("\nAgent: ",ai_response)
+
+                except Exception as e:
+                    print("Error: ",e)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
